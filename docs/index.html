@@ -25,6 +25,13 @@
         .fail { background-color: #fa8; }
         .noresult { background-color: #b00; color: white;}
         .missing { background-color: #333; color: white;}
+        #metadata {
+            margin-bottom: 1em;
+            font-family: monospace;
+            background: #f8f8f8;
+            padding: 0.5em;
+            border: 1px solid #ccc;
+        }
     </style>
 	<script>
 const fetchDumpFile = (path) => {
@@ -35,6 +42,10 @@ const fetchDumpFile = (path) => {
 	</script>
 </head>
 <body>
+    <h1>JPEG XL conformance bench</h1>
+
+    <div id="metadata"></div>
+
     <table id="testTable">
         <tr id="headerRow">
             <th>Test ID</th>
@@ -44,6 +55,27 @@ const fetchDumpFile = (path) => {
         let dump_dir = 'dumps/';
         let files = ['djxl', 'djxl_via_png', 'jxl-rs', 'jxl-rs_via_png', 'jxl-oxide', 'jxlatte', 'j40'];
 
+        // ---- Load and display metadata ----
+        fetch("meta/metadata.json")
+            .then(resp => resp.json())
+            .then(meta => {
+                let html = `
+                    <strong>Report created:</strong> ${meta.timestamp}<br>
+                    <strong>libjxl:</strong> ${meta.libjxl_commit}<br>
+                    <strong>jxl-rs:</strong> ${meta["jxl-rs_commit"]}<br>
+                    <strong>jxlatte:</strong> ${meta.jxlatte_commit}<br>
+                    <strong>j40:</strong> ${meta.j40_commit}<br>
+                    <strong>conformance:</strong> ${meta.conformance_commit}<br>
+                    <strong>jxl-oxide:</strong> ${meta["jxl-oxide_version"]}
+                `;
+                document.getElementById("metadata").innerHTML = html;
+            })
+            .catch(err => {
+                const metaDiv = document.getElementById("metadata").remove();
+                console.error("Metadata error", err);
+            });
+
+        // ---- Table rendering code (unchanged) ----
         // Create table headers
         const headerRow = document.getElementById('headerRow');
         files.forEach(file => {

@@ -1,0 +1,142 @@
+name: Nightly JPEG XL Benchmark
+
+on:
+  schedule:
+    - cron: "0 3 * * 7" # runs sunday at 03:00 UTC
+  workflow_dispatch: # allow manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          submodules: recursive
+
+      - name: Install Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@cb1e50a9932213ecece00a606661ae9ca44f3397
+
+      - name: Download conformance test data
+        run: |
+          ./third_party/conformance/scripts/download_and_symlink.sh
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            meson \
+            cmake \
+            pkg-config \
+            python3-pip \
+            openjdk-17-jdk \
+            golang \
+            wget \
+            unzip \
+            clang \
+            libc++-dev \
+            libbrotli-dev \
+            libjpeg-dev \
+            libpng-dev \
+            libgif-dev \
+            libwebp-dev \
+            libtiff-dev \
+            zlib1g-dev \
+            doxygen \
+            graphviz \
+            imagemagick
+
+          pip3 install numpy pypng apng
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install jxl-oxide
+        run: |
+          cargo install jxl-oxide-cli
+
+      - name: Build libjxl
+        run: |
+          SKIP_TEST=1 ./third_party/libjxl/ci.sh opt
+
+      - name: Build jxl-rs
+        run: |
+          cd third_party/jxl-rs
+          cargo build --release --bin jxl_cli
+
+      - name: Build jxlatte
+        run: |
+          mkdir -p third_party/jxlatte/build
+          meson setup third_party/jxlatte/build third_party/jxlatte/
+          ninja -C third_party/jxlatte/build
+
+      - name: Build j40
+        run: |
+          make -C third_party/j40
+
+      - name: Run jxl-oxide conformance test
+        run: |
+          python3 ./third_party/conformance/scripts/conformance.py \
+            --decoder "python3 scripts/wrap_png.py --decoder 'jxl-oxide %s -o %s -f png16'" \
+            --corpus ./third_party/conformance/testcases/main_level5.txt \
+            --results=./docs/dumps/dump_jxl-oxide.json \
+            --lax
+        continue-on-error: true
+
+      - name: Run jxl-rs conformance test
+        run: |
+          python3 ./third_party/conformance/scripts/conformance.py \
+            --decoder "python3 scripts/wrap_jxl-rs.py --decoder 'third_party/jxl-rs/target/release/jxl_cli %s %s --icc-out %s'" \
+            --corpus ./third_party/conformance/testcases/main_level5.txt \
+            --results=./docs/dumps/dump_jxl-rs.json \
+            --lax
+        continue-on-error: true
+
+      - name: Run libjx conformance test
+        run: |
+          python3 ./third_party/conformance/scripts/conformance.py \
+            --decoder "python3 scripts/wrap_png.py --decoder './third_party/libjxl/build/tools/djxl %s %s --bits_per_sample 16'" \
+            --corpus  ./third_party/conformance/testcases/main_level5.txt \
+            --results=./docs/dumps/dump_djxl_via_png.json \
+            --lax
+        continue-on-error: true
+
+      - name: Run jxlatte conformance test
+        run: |
+          python3 ./third_party/conformance/scripts/conformance.py \
+          --decoder "python3 scripts/wrap_png.py --decoder 'java -jar ./third_party/jxlatte/build/java/jxlatte.jar %s %s'" \
+          --corpus  ./third_party/conformance/testcases/main_level5.txt \
+          --results=./docs/dumps/dump_jxlatte.json \
+          --lax
+        continue-on-error: true
+
+      - name: Run j40 conformance test
+        run: |
+          python3 ./third_party/conformance/scripts/conformance.py \
+          --decoder "python3 scripts/wrap_png.py --decoder './third_party/j40/dj40 %s %s'" \
+          --corpus  ./third_party/conformance/testcases/main_level5.txt \
+          --results=./docs/dumps/dump_j40.json \
+          --lax
+        continue-on-error: true
+
+      - name: Generate metadata
+        run: ./scripts/generate_metadata.sh
+
+      - name: Commit updated docs
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add docs/
+          if git diff --cached --quiet; then
+            echo "No changes in docs/ — skipping commit."
+          else
+            git commit -m "Update conformance dumps [skip ci]"
+            git push
+          fi
