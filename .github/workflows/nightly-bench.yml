@@ -2,7 +2,7 @@ name: Nightly JPEG XL Benchmark
 
 on:
   schedule:
-    - cron: "0 3 * * 7" # runs sunday at 03:00 UTC
+    - cron: "0 3 * * 0" # runs sunday at 03:00 UTC
   workflow_dispatch: # allow manual trigger
 
 permissions:
